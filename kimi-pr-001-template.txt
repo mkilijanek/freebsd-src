@@ -1,0 +1,323 @@
+================================================================================
+PR-001: Modularize pkgbase - Part 1: Extract configuration variables
+================================================================================
+
+Pull Request Template - Ready for Submission
+Generated: 2026-04-25
+
+================================================================================
+1. PR SUMMARY
+================================================================================
+
+Title: pkgbase: Extract pkgbase variables into separate file
+
+Description:
+This PR is the first step in modularizing the pkgbase build system.
+It extracts all pkgbase-related configuration variables from Makefile.inc1
+into a dedicated file tools/pkgbase/build/vars.mk.
+
+This change:
+- Improves maintainability by separating configuration from logic
+- Makes it easier to find and modify pkgbase settings
+- Prepares the foundation for further modularization (Part 2 & 3)
+- Reduces Makefile.inc1 by ~20 lines
+
+No functional changes - the build behaves identically.
+
+================================================================================
+2. CHANGES OVERVIEW
+================================================================================
+
+Files Modified:
+- Makefile.inc1 (lines 592-612 removed, 1 line added)
+
+Files Created:
+- tools/pkgbase/build/vars.mk (new file, ~25 lines)
+
+Total Lines Changed:
+- Removed: ~20 lines from Makefile.inc1
+- Added: 1 include line in Makefile.inc1
+- Added: ~25 lines in new vars.mk
+- Net change: ~+6 lines (acceptable for readability gain)
+
+================================================================================
+3. DETAILED CHANGES
+================================================================================
+
+3.1 Makefile.inc1 Changes
+---------------------------
+
+Location: After line 591 (end of revision/version detection)
+
+BEFORE (lines 592-612):
+```makefile
+.endif	# !defined(_MKSHOWCONFIG)
+
+PKG_NAME_PREFIX?=	FreeBSD
+PKG_MAINTAINER?=	re@FreeBSD.org
+PKG_WWW?=		https://www.FreeBSD.org
+PKG_WORKERS_COUNT?=	1
+
+.if make(*package*)
+.export PKG_NAME_PREFIX
+.export PKG_MAINTAINER
+.export PKG_WWW
+
+.if !defined(PKG_TIMESTAMP)
+.if !empty(GIT_CMD) && exists(${GIT_CMD}) && exists(${SRCDIR}/.git)
+SOURCE_DATE_EPOCH!=	${GIT_CMD} -C ${SRCDIR} show -s --format=%ct HEAD
+.else
+TIMEEPOCHNOW=		%s
+SOURCE_DATE_EPOCH=	${TIMEEPOCHNOW:gmtime}
+.endif
+.else
+SOURCE_DATE_EPOCH=	${PKG_TIMESTAMP}
+.endif
+.endif
+```
+
+AFTER:
+```makefile
+.endif	# !defined(_MKSHOWCONFIG)
+
+# pkgbase configuration variables
+# Moved to tools/pkgbase/build/vars.mk
+.include "${.CURDIR}/tools/pkgbase/build/vars.mk"
+```
+
+3.2 New File: tools/pkgbase/build/vars.mk
+------------------------------------------
+
+Full content:
+```makefile
+#-
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# Copyright (c) 2026 The FreeBSD Foundation
+#
+# This file contains pkgbase configuration variables.
+# It is included from Makefile.inc1 during package builds.
+#
+
+# Package naming
+PKG_NAME_PREFIX?=	FreeBSD
+PKG_MAINTAINER?=	re@FreeBSD.org
+PKG_WWW?=		https://www.FreeBSD.org
+
+# Build settings
+PKG_WORKERS_COUNT?=	1
+
+# Export variables for package builds
+.if make(*package*)
+.export PKG_NAME_PREFIX
+.export PKG_MAINTAINER
+.export PKG_WWW
+
+# Source date epoch for reproducible builds
+.if !defined(PKG_TIMESTAMP)
+.if !empty(GIT_CMD) && exists(${GIT_CMD}) && exists(${SRCDIR}/.git)
+SOURCE_DATE_EPOCH!=	${GIT_CMD} -C ${SRCDIR} show -s --format=%ct HEAD
+.else
+TIMEEPOCHNOW=		%s
+SOURCE_DATE_EPOCH=	${TIMEEPOCHNOW:gmtime}
+.endif
+.else
+SOURCE_DATE_EPOCH=	${PKG_TIMESTAMP}
+.endif
+
+.endif	# make(*package*)
+```
+
+================================================================================
+4. TESTING PROCEDURE
+================================================================================
+
+4.1 Pre-flight Checks
+---------------------
+Before submitting, verify:
+
+```bash
+# 1. Syntax check
+make -f Makefile.inc1 -n showconfig 2>&1 | head -20
+# Expected: No syntax errors
+
+# 2. Variable check
+cd /usr/src
+make showconfig 2>&1 | grep -E "PKG_NAME_PREFIX|PKG_MAINTAINER|PKG_WWW"
+# Expected:
+# PKG_NAME_PREFIX=FreeBSD
+# PKG_MAINTAINER=re@FreeBSD.org
+# PKG_WWW=https://www.FreeBSD.org
+```
+
+4.2 Functional Tests
+--------------------
+
+Test A: Variables are correctly defined
+```bash
+cd /usr/src
+make -V PKG_NAME_PREFIX
+# Expected: FreeBSD
+
+make -V PKG_MAINTAINER
+# Expected: re@FreeBSD.org
+
+make -V PKG_WWW
+# Expected: https://www.FreeBSD.org
+```
+
+Test B: Package build dry-run
+```bash
+cd /usr/src
+make -n packages 2>&1 | head -30
+# Expected: No errors, normal package build output
+```
+
+Test C: No regression in existing behavior
+```bash
+cd /usr/src
+# Compare before/after if possible
+# Or verify against reference system
+make showconfig 2>&1 | diff - reference_output.txt
+# Expected: Only line number differences, same values
+```
+
+4.3 CI/CD Testing
+-----------------
+- [ ] Build succeeds on amd64
+- [ ] Build succeeds on arm64
+- [ ] Cirrus CI pkgbase job passes
+
+================================================================================
+5. REVIEW CHECKLIST
+================================================================================
+
+For Reviewers:
+
+Code Quality:
+- [ ] Changes are minimal and focused
+- [ ] No functional changes (only refactoring)
+- [ ] Variables maintain same values as before
+- [ ] Include path is correct and portable
+
+Style:
+- [ ] Follows style.Makefile(5)
+- [ ] Proper SPDX license header in new file
+- [ ] Consistent indentation (tabs, not spaces)
+
+Testing:
+- [ ] Author provided test results
+- [ ] make showconfig works
+- [ ] make -n packages works
+- [ ] No breakage in CI
+
+Documentation:
+- [ ] Comments explain why (not what)
+- [ ] No new man pages needed (internal change)
+
+================================================================================
+6. COMMIT MESSAGE
+================================================================================
+
+pkgbase: Extract pkgbase configuration variables into separate file
+
+Extract pkgbase-related configuration variables from Makefile.inc1 into
+tools/pkgbase/build/vars.mk. This is the first step in modularizing the
+pkgbase build system.
+
+Changes:
+- Move PKG_NAME_PREFIX, PKG_MAINTAINER, PKG_WWW, PKG_WORKERS_COUNT
+- Move SOURCE_DATE_EPOCH calculation logic
+- Add include in Makefile.inc1
+
+No functional changes intended.
+
+This prepares the foundation for:
+- Part 2: Extract staging targets
+- Part 3: Full modularization
+
+Reviewed by:
+MFC after:
+Sponsored by:
+Differential Revision: https://reviews.freebsd.org/Dxxxxx
+
+================================================================================
+7. DISCUSSION POINTS FOR REVIEW
+================================================================================
+
+Potential Questions:
+
+Q: Why not keep everything in Makefile.inc1?
+A: Monolithic files are harder to maintain. This separation makes it clear
+   which variables belong to pkgbase and allows easier modification.
+
+Q: Does this affect existing users?
+A: No - the include happens at the same point in processing, and all
+   variables have ?= assignments, preserving any user overrides.
+
+Q: Why tools/pkgbase/build/ not just tools/pkgbase/?
+A: Anticipating future structure: build/ will contain build system files,
+   while root might contain scripts like metalog_reader.lua.
+
+Q: Should we move more variables?
+A: Not in this PR. Additional variables (PKG_LEVEL, PKG_CTHREADS, etc.)
+   will be evaluated in Part 2 and Part 3.
+
+================================================================================
+8. BACKWARD COMPATIBILITY
+================================================================================
+
+This change maintains full backward compatibility:
+
+1. Variable definitions use ?= (lazy assignment), so user overrides
+   in /etc/src.conf or /etc/make.conf are preserved.
+
+2. The include happens at the exact same location in Makefile.inc1,
+   maintaining processing order.
+
+3. All variables have the same default values as before.
+
+4. No changes to public interfaces or user-visible behavior.
+
+================================================================================
+9. RELATED WORK
+================================================================================
+
+This PR is Part 1 of a series:
+
+Part 1 (This PR): Extract variables
+Part 2 (Future): Extract staging targets
+Part 3 (Future): Full modularization
+Part 4 (Future): Dependency management
+
+See also:
+- PR-xxx: Modularize pkgbase - Part 2 (staging)
+- PR-yyy: Modularize pkgbase - Part 3 (full build system)
+
+================================================================================
+10. ATTACHMENTS
+================================================================================
+
+Required for submission:
+- [ ] Patch file (git diff -u)
+- [ ] Test output showing before/after
+- [ ] CI results (Cirrus CI link)
+
+Optional:
+- [ ] Design document (if significant discussion needed)
+- [ ] Performance comparison (N/A for this change)
+
+================================================================================
+END OF TEMPLATE
+================================================================================
+
+Submission Instructions:
+1. Create branch: git checkout -b pkgbase-modularize-part1
+2. Apply changes from section 3
+3. Run tests from section 4
+4. Commit with message from section 6
+5. Push and create Phabricator review
+6. Link to arch@freebsd.org discussion
+
+Phabricator Tags: #pkgbase #build
+Reviewers: bapt (pkgbase maintainer), imp (build system)

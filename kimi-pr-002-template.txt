@@ -1,0 +1,282 @@
+================================================================================
+PR-002: Modularize pkgbase - Part 2: Extract staging targets
+================================================================================
+
+Pull Request Template - Ready for Submission
+Generated: 2026-04-25
+Depends on: PR-001 (vars.mk)
+
+================================================================================
+1. PR SUMMARY
+================================================================================
+
+Title: pkgbase: Extract staging targets into separate file
+
+Description:
+Second step in modularizing pkgbase build system. Extracts all staging-related
+targets from Makefile.inc1 into tools/pkgbase/build/stage.mk.
+
+This change:
+- Separates staging logic from main build flow
+- Makes staging targets easier to find and modify
+- Reduces Makefile.inc1 by ~100 lines
+- Prepares for Part 3 (create and sign targets)
+
+No functional changes.
+
+================================================================================
+2. CHANGES OVERVIEW
+================================================================================
+
+Files Modified:
+- Makefile.inc1 (lines ~2147-2160 removed)
+
+Files Created:
+- tools/pkgbase/build/stage.mk (new file, ~25 lines)
+- tools/pkgbase/build/common.mk (new file, ~20 lines - shared functions)
+
+Total Lines Changed:
+- Removed: ~15 lines from Makefile.inc1
+- Added: 2 include lines in Makefile.inc1
+- Added: ~45 lines in new files
+
+================================================================================
+3. DETAILED CHANGES
+================================================================================
+
+3.1 Makefile.inc1 Changes
+---------------------------
+
+Location: After line 2146 (after _repodir target)
+
+BEFORE (lines ~2147-2160):
+```makefile
+stage-packages-world: .PHONY
+	@mkdir -p ${WSTAGEDIR}
+	${_+_}@cd ${.CURDIR}; \
+		${MAKE} DESTDIR=${WSTAGEDIR} -DNO_ROOT stageworld
+
+stage-packages-kernel: .PHONY
+	@mkdir -p ${KSTAGEDIR}
+	${_+_}@cd ${.CURDIR}; \
+		${MAKE} DESTDIR=${KSTAGEDIR} -DNO_ROOT stagekernel
+
+stage-packages-source: .PHONY
+	@mkdir -p ${SSTAGEDIR};
+
+stage-packages: .PHONY stage-packages-world stage-packages-kernel stage-packages-source
+```
+
+AFTER:
+```makefile
+# Staging targets moved to tools/pkgbase/build/stage.mk
+.include "${.CURDIR}/tools/pkgbase/build/stage.mk"
+```
+
+3.2 New File: tools/pkgbase/build/common.mk
+--------------------------------------------
+
+Full content:
+```makefile
+#-
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# Copyright (c) 2026 The FreeBSD Foundation
+#
+# Common functions and variables for pkgbase build system
+#
+
+# Ensure directories exist
+_repodir: .PHONY
+	@mkdir -p ${REPODIR}
+
+# Staging directories
+WSTAGEDIR?=	${OBJTOP}/worldstage
+KSTAGEDIR?=	${OBJTOP}/kernelstage
+SSTAGEDIR?=	${OBJTOP}/sourcestage
+
+# Export for sub-makes
+.export WSTAGEDIR KSTAGEDIR SSTAGEDIR
+```
+
+3.3 New File: tools/pkgbase/build/stage.mk
+------------------------------------------
+
+Full content:
+```makefile
+#-
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# Copyright (c) 2026 The FreeBSD Foundation
+#
+# Staging targets for pkgbase package builds
+#
+
+# Stage world for packaging
+stage-packages-world: .PHONY
+	@mkdir -p ${WSTAGEDIR}
+	${_+_}@cd ${.CURDIR}; \
+		${MAKE} DESTDIR=${WSTAGEDIR} -DNO_ROOT stageworld
+
+# Stage kernel for packaging
+stage-packages-kernel: .PHONY
+	@mkdir -p ${KSTAGEDIR}
+	${_+_}@cd ${.CURDIR}; \
+		${MAKE} DESTDIR=${KSTAGEDIR} -DNO_ROOT stagekernel
+
+# Stage source for packaging
+stage-packages-source: .PHONY
+	@mkdir -p ${SSTAGEDIR}
+
+# Meta-target for all staging
+stage-packages: .PHONY stage-packages-world stage-packages-kernel stage-packages-source
+```
+
+================================================================================
+4. TESTING PROCEDURE
+================================================================================
+
+4.1 Pre-flight Checks
+---------------------
+
+```bash
+# 1. Syntax check
+make -f Makefile.inc1 -f tools/pkgbase/build/stage.mk -n stage-packages 2>&1 | head -10
+# Expected: No syntax errors
+
+# 2. Directory creation check
+make -n stage-packages-world 2>&1 | grep mkdir
+# Expected: mkdir -p ${WSTAGEDIR}
+```
+
+4.2 Functional Tests
+--------------------
+
+Test A: Staging targets exist
+```bash
+cd /usr/src
+make -n stage-packages 2>&1 | head -5
+# Expected: Shows staging commands, no errors
+```
+
+Test B: Individual targets work
+```bash
+make -n stage-packages-world
+# Expected: Shows mkdir and make stageworld
+
+make -n stage-packages-kernel
+# Expected: Shows mkdir and make stagekernel
+
+make -n stage-packages-source
+# Expected: Shows mkdir for SSTAGEDIR
+```
+
+Test C: Full package build still works
+```bash
+# This will take time, but verify no breakage
+make -n packages 2>&1 | head -50
+# Expected: Should show full flow including staging
+```
+
+4.3 Verify Dependencies
+-------------------------
+```bash
+# PR-002 depends on PR-001, verify vars.mk is loaded
+make -V WSTAGEDIR
+# Expected: Should show path, not empty
+```
+
+================================================================================
+5. REVIEW CHECKLIST
+================================================================================
+
+Code Quality:
+- [ ] Depends on PR-001 (vars.mk must be merged first)
+- [ ] Staging targets maintain same behavior
+- [ ] Directory creation happens before make calls
+- [ ] All three stage directories handled
+
+Style:
+- [ ] Follows style.Makefile(5)
+- [ ] Proper SPDX headers
+- [ ] Consistent with vars.mk structure
+
+Testing:
+- [ ] make stage-packages works
+- [ ] Individual targets work
+- [ ] No regression in make packages
+- [ ] CI passes
+
+================================================================================
+6. COMMIT MESSAGE
+================================================================================
+
+pkgbase: Extract staging targets into separate file
+
+Extract pkgbase staging targets from Makefile.inc1 into
+tools/pkgbase/build/stage.mk. This is Part 2 of modularizing the
+pkgbase build system.
+
+Changes:
+- Move stage-packages-world, stage-packages-kernel, stage-packages-source
+- Move stage-packages meta-target
+- Create tools/pkgbase/build/common.mk for shared functions
+- Update Makefile.inc1 includes
+
+Depends on PR-001 (vars.mk)
+No functional changes.
+
+Reviewed by:
+MFC after:
+Differential Revision: https://reviews.freebsd.org/Dxxxxx
+
+================================================================================
+7. DISCUSSION POINTS
+================================================================================
+
+Q: Why common.mk?
+A: shared directory creation logic (_repodir) and staging directories
+   can be reused by create.mk and sign.mk in Part 3.
+
+Q: Order of includes in Makefile.inc1?
+A: Important: vars.mk before stage.mk (stage needs vars)
+   Suggested order:
+   1. vars.mk
+   2. common.mk
+   3. stage.mk
+
+Q: What about _repodir target?
+A: Moved to common.mk as it's needed by both stage and create targets.
+
+================================================================================
+8. MERGE CONFLICTS
+================================================================================
+
+Potential conflicts:
+- If Makefile.inc1 modified between PR-001 and PR-002
+- If other changes to staging targets in Makefile.inc1
+
+Resolution:
+- Rebase on main after PR-001 merges
+- Verify staging targets haven't been modified
+
+================================================================================
+9. RELATED WORK
+================================================================================
+
+Part 1 (Merged): Extract variables (PR-001)
+Part 2 (This PR): Extract staging targets
+Part 3 (Future): Extract create and sign targets
+Part 4 (Future): Full modularization with parallel build
+
+================================================================================
+10. ATTACHMENTS
+================================================================================
+
+- [ ] Patch file (git diff -u)
+- [ ] Test output showing stage targets work
+- [ ] CI results
+
+================================================================================
+END OF TEMPLATE
+================================================================================

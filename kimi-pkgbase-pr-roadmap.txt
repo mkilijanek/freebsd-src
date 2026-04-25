@@ -1,0 +1,392 @@
+================================================================================
+PKGBASE - ROADMAPA PR (Pull Requests)
+================================================================================
+
+Wygenerowano: 2026-04-25
+Status: Propozycja do implementacji
+
+================================================================================
+FAZA 1: MODULARIZACJA MAKEFILE (Miesiące 1-2)
+================================================================================
+
+PR-001: Rozbicie Makefile.inc1 - Część 1 (Zmienne)
+--------------------------------------------------
+Priorytet: Wysoki
+Ryzyko: Niskie
+Rozmiar: ~50 linii zmian
+Czas: 1 tydzień
+
+Opis:
+Wydzielenie wszystkich zmiennych konfiguracyjnych pkgbase z Makefile.inc1
+do osobnego pliku tools/pkgbase/build/vars.mk
+
+Zmiany:
+- Makefile.inc1: Usunięcie linii 592-612 (zmienne pkgbase)
+- Makefile.inc1: Dodanie .include dla vars.mk
+- NOWY: tools/pkgbase/build/vars.mk (kopia zmiennych)
+
+Testowanie:
+- make -n packages (dry-run)
+- make showconfig (sprawdzenie zmiennych)
+
+Blokuje: PR-002, PR-003
+
+---
+
+PR-002: Rozbicie Makefile.inc1 - Część 2 (Staging)
+-------------------------------------------------
+Priorytet: Wysoki
+Ryzyko: Niskie
+Rozmiar: ~100 linii zmian
+Czas: 1 tydzień
+
+Opis:
+Wydzielenie targetów stage-packages* do osobnego pliku
+
+Zmiany:
+- Makefile.inc1: Usunięcie linii 2147-2160 (stage-packages)
+- NOWY: tools/pkgbase/build/stage.mk
+
+Targety do przeniesienia:
+- stage-packages-world
+- stage-packages-kernel
+- stage-packages-source
+- stage-packages
+
+Testowanie:
+- make stage-packages-world (powinno działać)
+- make stage-packages (powinno działać)
+
+Zależy od: PR-001
+Blokuje: PR-003
+
+---
+
+PR-003: Modularny System Budowania
+-----------------------------------
+Priorytet: Krytyczny
+Ryzyko: Średnie
+Rozmiar: ~300 linii nowego kodu
+Czas: 2-3 tygodnie
+
+Opis:
+Stworzenie kompletnego modularnego systemu build w tools/pkgbase/build/
+
+Struktura:
+tools/pkgbase/build/
+├── common.mk           # Wspólne funkcje i zmienne
+├── bootstrap.mk        # Bootstrap pkg
+├── stage.mk            # Staging (z PR-002)
+├── create.mk           # Tworzenie pakietów
+├── sign.mk             # Podpisywanie
+└── update.mk           # Update packages
+
+Zmiany:
+- Makefile.inc1: Usunięcie wszystkich targetów pkgbase
+- Makefile.inc1: Dodanie .include "${.CURDIR}/tools/pkgbase/build/*.mk"
+- Makefile.inc1: Pozostawienie tylko entry point (packages, update-packages)
+
+Testowanie:
+- Pełny build: make packages
+- Update: make update-packages
+- Każdy target osobno
+
+Zależy od: PR-001, PR-002
+Blokuje: PR-007
+
+================================================================================
+FAZA 2: ZARZĄDZANIE ZALEŻNOŚCIAMI (Miesiące 2-4)
+================================================================================
+
+PR-004: Deklaratywne Zależności w UCL
+--------------------------------------
+Priorytet: Wysoki
+Ryzyko: Średnie
+Rozmiar: ~20 plików zmienionych
+Czas: 2 tygodnie
+
+Opis:
+Dodanie sekcji "deps" do plików .ucl z deklaratywnymi zależnościami
+
+Zmiany:
+- packages/*/ucl/*.ucl: Dodanie sekcji deps
+- release/packages/template.ucl: Template dla deps
+- release/packages/generate-ucl.lua: Parsowanie deps
+
+Przykład:
+```ucl
+deps:
+  "${PKG_NAME_PREFIX}-clibs":
+    version: ">=14.0"
+    origin: "base/${PKG_NAME_PREFIX}-clibs"
+```
+
+Testowanie:
+- generate-ucl.lua generuje poprawne deps
+- Brak błędów przy make create-packages
+
+Zależy od: PR-003
+
+---
+
+PR-005: Dependency Solver w C
+------------------------------
+Priorytet: Krytyczny
+Ryzyko: Wysokie
+Rozmiar: ~500 linii C + bindings
+Czas: 4-6 tygodni
+
+Opis:
+Implementacja SAT-based solvera zależności w C z Lua bindings
+
+Struktura:
+tools/pkgbase/libdeps/
+├── depsolver.h         # Public API
+├── depsolver.c         # Implementacja SAT solver
+├── toposort.c          # Topological sort jako fallback
+├── lua_bindings.c      # Lua bindings
+└── Makefile
+
+Funkcjonalność:
+- Parsowanie deklaratywnych zależności z UCL
+- Wykrywanie cyklicznych zależności
+- Topological sort
+- Sugestie dla niespełnionych zależności
+
+Testowanie:
+- Unit testy w C (atf)
+- Integration testy z Lua
+
+Zależy od: PR-004
+Blokuje: PR-007
+
+================================================================================
+FAZA 3: WYDAJNOŚĆ (Miesiące 4-5)
+================================================================================
+
+PR-006: SQLite Cache dla Incremental Build
+-------------------------------------------
+Priorytet: Wysoki
+Ryzyko: Średnie
+Rozmiar: ~200 linii C + Lua
+Czas: 3-4 tygodnie
+
+Opis:
+System cache'owania bazujący na SQLite do śledzenia zmian i
+umożliwienia incremental builds
+
+Struktura:
+tools/pkgbase/libcache/
+├── pkgcache.h
+├── pkgcache.c
+├── schema.sql            # Schemat SQLite
+└── Makefile
+
+Funkcjonalność:
+- Przechowywanie hashy plików źródłowych
+- Śledzenie czasu budowy
+- Detekcja zmian
+- Ominięcie niezmienionych pakietów
+
+Testowanie:
+- Pierwszy build: wszystko buduje
+- Drugi build bez zmian: pomija wszystko
+- Zmiana jednego pliku: buduje tylko zależne pakiety
+
+Zależy od: PR-003
+
+---
+
+PR-007: Parallel Package Builder
+---------------------------------
+Priorytet: Wysoki
+Ryzyko: Wysokie
+Rozmiar: ~150 linii C/Makefile
+Czas: 3-4 tygodnie
+
+Opis:
+Równoległe budowanie pakietów z użyciem wątków POSIX
+
+Struktura:
+tools/pkgbase/
+├── parallel-builder.c      # Główny program
+├── job_queue.c             # Kolejka zadań
+├── worker_pool.c           # Pool wątków
+└── Makefile
+
+Funkcjonalność:
+- -jN flag (parallel jobs)
+- Dependency-aware scheduling
+- Load balancing
+- Progress reporting
+
+Testowanie:
+- Build z -j1 (sekwencyjny)
+- Build z -j8 (równoległy)
+- Porównanie czasów
+- Brak race conditions
+
+Zależy od: PR-005 (dependency solver dla kolejności)
+
+================================================================================
+FAZA 4: JAKOŚĆ I TESTOWANIE (Miesiące 5-6)
+================================================================================
+
+PR-008: Test Framework dla metalog_reader.lua
+----------------------------------------------
+Priorytet: Średni
+Ryzyko: Niskie
+Rozmiar: ~100 linii Lua
+Czas: 1 tydzień
+
+Opis:
+Unit testy dla metalog_reader.lua używając luaunit
+
+Struktura:
+tools/pkgbase/tests/
+├── test_metalog_reader.lua
+├── fixtures/
+│   ├── sample.metalog
+│   └── expected_output.txt
+└── run_tests.sh
+
+Test cases:
+- Parsowanie poprawnego METALOG
+- Detekcja duplikatów
+- Filtrowanie pakietów
+- Statystyki
+
+---
+
+PR-009: Test Framework dla generate-ucl.lua
+---------------------------------------------
+Priorytet: Średni
+Ryzyko: Niskie
+Rozmiar: ~100 linii Lua
+Czas: 1 tydzień
+
+Opis:
+Unit testy dla generatorów UCL
+
+Struktura:
+release/packages/tests/
+├── test_generate_ucl.lua
+├── test_generate_set_ucl.lua
+├── fixtures/
+│   ├── template.ucl
+│   └── expected/
+└── run_tests.sh
+
+Test cases:
+- Podstawianie zmiennych
+- Generowanie suffixów
+- Dodawanie zależności
+- Obsługa błędów
+
+---
+
+PR-010: Dokumentacja pkgbase
+-----------------------------
+Priorytet: Niski
+Ryzyko: Niskie
+Rozmiar: ~50-100 linii
+Czas: 3-5 dni
+
+Opis:
+Aktualizacja dokumentacji w tools/pkgbase/README.md
+
+Zmiany:
+- Opis nowej architektury modularnej
+- Przykłady użycia
+- Troubleshooting guide
+- Contributing guidelines
+
+Zależy od: PR-003 (nowa architektura)
+
+================================================================================
+ZALEŻNOŚCI I ŚCIEŻKA KRYTYCZNA
+================================================================================
+
+Ścieżka krytyczna (critical path):
+┌─────────────────────────────────────────────────────────┐
+│ PR-001 → PR-002 → PR-003 → PR-005 → PR-007              │
+│                   ↓                                       │
+│               PR-004 (może być równolegle)                │
+└─────────────────────────────────────────────────────────┘
+
+PR-y niezależne (można równolegle):
+- PR-006 (SQLite cache) - zależy od PR-003
+- PR-008, PR-009 (testy) - nie zależą od innych
+- PR-010 (dokumentacja) - zależy od PR-003
+
+================================================================================
+SZACOWANE KOSZTY I KORZYŚCI
+================================================================================
+
+Łączny nakład pracy:
+- 2 deweloperów
+- 6 miesięcy (przy pełnym zaangażowaniu)
+- ~2,000 linii nowego kodu
+- ~150 linii usuniętego kodu (z Makefile.inc1)
+
+Korzyści po implementacji:
+- Czas buildu: 4-8h → 30-60 min (przyspieszenie 8x+)
+- Modularność: 1 plik → 6+ modułów
+- Testowalność: 0% → ~80% pokrycia
+- Maintenance: Łatwiejsze (modularny kod)
+
+================================================================================
+PODEJŚCIE INKREMENTALNE
+================================================================================
+
+Alternatywnie: Mniejsze PR-y dla szybszej iteracji
+
+Zamiast PR-003 (duży):
+- PR-003a: common.mk + bootstrap.mk
+- PR-003b: stage.mk
+- PR-003c: create.mk
+- PR-003d: sign.mk + update.mk
+
+Zalety:
+- Szybsze review
+- Mniejsze ryzyko
+- Łatwiejsze rollback
+
+Wady:
+- Więcej PR-ów do zarządzania
+- Możliwe tymczasowe stany niestabilne
+
+================================================================================
+PODSUMOWANIE PRIORYTETÓW
+================================================================================
+
+Tier 1 (Musi być zrobione pierwsze):
+1. PR-001 (Zmienne) - Foundation
+2. PR-002 (Staging) - Foundation
+3. PR-003 (Modularny build) - Foundation
+
+Tier 2 (Duży zysk):
+4. PR-005 (Dependency solver) - Enable parallel builds
+5. PR-007 (Parallel builder) - 8x speedup
+
+Tier 3 (Ulepszenia):
+6. PR-004 (Deklaratywne deps) - Lepsza maintainability
+7. PR-006 (SQLite cache) - Incremental builds
+
+Tier 4 (Nice to have):
+8. PR-008, PR-009 (Testy)
+9. PR-010 (Dokumentacja)
+
+================================================================================
+NASTĘPNE KROKI
+================================================================================
+
+1. Review tej roadmapy przez core team
+2. Przygotowanie PR-001 (szczegółowy template w osobnym pliku)
+3. Mailing list discussion: arch@freebsd.org
+4. Phabricator review process
+5. Merge PR-001 → develop → repeat
+
+================================================================================
+END OF ROADMAP
+================================================================================
