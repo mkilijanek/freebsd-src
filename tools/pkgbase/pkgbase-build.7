@@ -1,0 +1,178 @@
+.\" SPDX-License-Identifier: BSD-2-Clause
+.\"
+.\" Copyright (c) 2026 The FreeBSD Foundation
+.\"
+.\" This man page documents the pkgbase modular build system.
+.\"
+.Dd April 25, 2026
+.Dt PKGBASE-BUILD 7
+.Os
+.Sh NAME
+.Nm pkgbase-build
+.Nd FreeBSD base system package build system
+.Sh SYNOPSIS
+Build targets:
+.Pp
+.Bl -bullet -compact
+.It
+.Cm make stage-packages
+.It
+.Cm make create-packages
+.It
+.Cm make sign-packages
+.It
+.Cm make packages
+.El
+.Sh DESCRIPTION
+The
+.Nm
+system creates binary packages from the FreeBSD base system,
+enabling package-based updates using
+.Xr pkg 8 .
+.Pp
+The build process consists of three main phases:
+.Bl -enum
+.It
+.Em Staging :
+Files are collected into staging directories
+.It
+.Em Creation :
+Package files are generated from staged content
+.It
+.Em Signing :
+Repository metadata is cryptographically signed
+.El
+.Sh BUILD TARGETS
+.Ss Staging Targets
+.Bl -tag -width "stage-packages-world" -compact
+.It Cm stage-packages-world
+Stage userland files into
+.Pa ${WSTAGEDIR} .
+.It Cm stage-packages-kernel
+Stage kernel files into
+.Pa ${KSTAGEDIR} .
+.It Cm stage-packages-source
+Stage source files into
+.Pa ${SSTAGEDIR} .
+.It Cm stage-packages
+Run all staging targets.
+.El
+.Ss Creation Targets
+.Bl -tag -width "create-packages-world" -compact
+.It Cm create-packages-world
+Create world component packages.
+.It Cm create-packages-kernel
+Create kernel packages.
+.It Cm create-packages-source
+Create source packages.
+.It Cm create-packages-sets
+Create metapackages grouping related packages.
+.It Cm create-packages
+Run all package creation targets.
+.El
+.Ss Signing Targets
+.Bl -tag -width "sign-packages" -compact
+.It Cm sign-packages
+Sign repository metadata and create signature file.
+.El
+.Ss Complete Build
+.Bl -tag -width "packages" -compact
+.It Cm packages
+Run complete package build: stage, create, and sign.
+.It Cm update-packages
+Build only changed packages (incremental).
+.El
+.Sh CONFIGURATION
+The following variables control the build process:
+.Ss Package Naming
+.Bl -tag -width "PKG_WORKERS_COUNT" -compact
+.It Va PKG_NAME_PREFIX
+Package name prefix (default:
+.Dq FreeBSD ).
+.It Va PKG_MAINTAINER
+Maintainer contact email (default:
+.Dq re@FreeBSD.org ).
+.It Va PKG_WWW
+Project website URL (default:
+.Dq https://www.FreeBSD.org ).
+.El
+.Ss Build Control
+.Bl -tag -width "PKG_WORKERS_COUNT" -compact
+.It Va PKG_WORKERS_COUNT
+Parallel workers for signing (default: 1).
+.It Va SOURCE_DATE_EPOCH
+Timestamp for reproducible builds.
+.El
+.Ss Directories
+.Bl -tag -width "PKG_WORKERS_COUNT" -compact
+.It Va WSTAGEDIR
+World staging directory.
+.It Va KSTAGEDIR
+Kernel staging directory.
+.It Va SSTAGEDIR
+Source staging directory.
+.It Va REPODIR
+Package repository output directory.
+.El
+.Sh FILES
+.Bl -tag -width "tools/pkgbase/build/" -compact
+.It Pa tools/pkgbase/build/vars.mk
+Configuration variables.
+.It Pa tools/pkgbase/build/common.mk
+Shared functions and directory definitions.
+.It Pa tools/pkgbase/build/bootstrap.mk
+Tool bootstrapping.
+.It Pa tools/pkgbase/build/stage.mk
+Staging targets.
+.It Pa tools/pkgbase/build/create.mk
+Package creation targets.
+.It Pa tools/pkgbase/build/sign.mk
+Repository signing.
+.It Pa tools/pkgbase/build/update.mk
+Update package logic.
+.It Pa tools/pkgbase/metalog_reader.lua
+METALOG analysis tool.
+.El
+.Sh EXAMPLES
+.Ss Complete Build
+Build all packages:
+.Bd -literal -offset indent
+cd /usr/src
+make packages
+.Ed
+.Ss Step-by-Step Build
+Build in phases with inspection between:
+.Bd -literal -offset indent
+make stage-packages
+# Inspect ${WSTAGEDIR}
+make create-packages
+make sign-packages
+.Ed
+.Ss Dry Run
+See what would be built without executing:
+.Bd -literal -offset indent
+make -n packages
+.Ed
+.Sh METALOG FORMAT
+The METALOG file records file metadata during staging:
+.Bd -literal -offset indent
+./bin/ls type=file uname=root gname=wheel mode=0755 \\
+    tags=package=FreeBSD-utilities
+.Ed
+.Pp
+The
+.Nm metalog_reader.lua
+tool analyzes these files.
+.Sh SEE ALSO
+.Xr build 7 ,
+.Xr pkg 8 ,
+.Xr src.conf 5 ,
+.Xr style.Makefile 5
+.Sh HISTORY
+The modular build system was introduced to improve maintainability
+and enable future enhancements like parallel builds and dependency tracking.
+.Sh AUTHORS
+.An The FreeBSD Project
+.Sh BUGS
+Report issues at
+.Lk https://bugs.freebsd.org
